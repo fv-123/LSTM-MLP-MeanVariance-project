@@ -1,0 +1,1 @@
+Securities market is getting larger in scale, more noisy, so it’s getting harder to predict price movement. This raises a question, is it better to use a deterministic model, which is static and purely mathematical, or leverage machine learning, which can adapt to the environment, in allocating assets across a portfolio.
