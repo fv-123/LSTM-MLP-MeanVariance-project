@@ -1,46 +1,58 @@
+import yfinance as yf
 import pandas as pd
 
-def process_daily_stock_data(input_file, output_file):
-    """
-    Parameters:
-    - input_file: str, path to the input CSV file.
-    - output_file: str, path to save the processed CSV file.
-    """
-    # Load the data, parsing 'Date/Time' as datetime
-    df = pd.read_csv(input_file, parse_dates=['Date/Time'])
+# Define the stock tickers and date range
+tickers = ["VCB.VN", "MSN.VN", "HPG.VN", "VIC.VN", "VJC.VN"]  # Replace with your tickers
+start_date = "2023-01-1"
+end_date = "2025-04-15"
 
-    # Drop 'Open Interest'
-    if 'Open Interest' in df.columns:
-        df = df.drop(columns=['Open Interest'])
-
-    # Set 'Date/Time' as the index
-    df = df.set_index('Date/Time')
-
-    # Resample to daily frequency for each ticker
-    df_resampled = df.groupby('Ticker').resample('D').agg({
-        'Open': 'first',  # First value of the day
-        'High': 'max',  # Maximum value of the day
-        'Low': 'min',  # Minimum value of the day
-        'Close': 'last',  # Last value of the day
-        'Volume': 'sum'  # Sum of the day's volume
-    })
-
-    # Pivot the data so each ticker's features are in columns
-    df_pivoted = df_resampled.unstack('Ticker')
-
-    # Flatten the column names (e.g., 'FPT_Open', 'FPT_Close')
-    df_pivoted.columns = [f'{col[1]}_{col[0]}' for col in df_pivoted.columns]
-
-    # Drop rows with any missing values
-    df_pivoted = df_pivoted.dropna()
-
-    # Save the processed data to a CSV file
-    df_pivoted.to_csv(output_file)
-    print(f"Processed daily data saved to {output_file}")
+# Fetch data for all tickers at once with error handling
+try:
+    data = yf.download(tickers, start=start_date, end=end_date, group_by="ticker", threads=True, auto_adjust=False)
+    if data.empty:
+        raise ValueError("No data was downloaded. Check ticker symbols or date range.")
+except Exception as e:
+    print(f"Error downloading data: {e}")
+    exit(1)
 
 
-# Example usage
-if __name__ == "__main__":
-    input_file = 'data/combined_data.csv'  # Replace with your input file path
-    output_file = 'data/processed_daily_data.csv'  # Desired output file path
-    process_daily_stock_data(input_file, output_file)
+
+# Check if data was successfully downloaded for each ticker
+available_tickers = []
+for ticker in tickers:
+    try:
+        # Check if the ticker exists in the DataFrame's columns (handle both multi-index and flat index)
+        if isinstance(data.columns, pd.MultiIndex):
+            # Multi-index case (group_by="ticker")
+            if ticker in data.columns.get_level_values(0):
+                ticker_data = data[ticker]
+                if 'Close' in ticker_data.columns and not ticker_data['Close'].isna().all():
+                    available_tickers.append(ticker)
+                else:
+                    print(f"No valid data for {ticker}: Missing or all-NaN Close prices")
+            else:
+                print(f"No data column for {ticker}")
+        else:
+            # Flat index case (e.g., if group_by="ticker" didn't work as expected)
+            if 'Close' in data.columns and not data['Close'].isna().all():
+                # Single ticker case or unexpected structure
+                available_tickers.append(ticker)
+            else:
+                print(f"No valid data for {ticker}: Missing or all-NaN Close prices")
+    except Exception as e:
+        print(f"Error checking data for {ticker}: {e}")
+
+if not available_tickers:
+    print("No data available for any ticker. Exiting.")
+    exit(1)
+else:
+    print(f"Successfully downloaded data for: {available_tickers}")
+
+# Save individual files for each ticker
+for ticker in available_tickers:
+    try:
+        ticker_data = data[ticker] if isinstance(data.columns, pd.MultiIndex) else data
+        ticker_data.to_csv(f"{ticker}_data.csv")
+        print(f"Saved individual file for {ticker}")
+    except Exception as e:
+        print(f"Error saving data for {ticker}: {e}")
